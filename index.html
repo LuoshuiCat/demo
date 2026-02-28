@@ -133,7 +133,13 @@
         .center-text.right-text.active { color: #99ff99; }
 
         /* 4. 滑动区域 (底部) */
-        #swipe-area { height: 220px; position: relative; background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.5)); display: flex; justify-content: center; align-items: center; flex-shrink: 0; z-index: 50; }
+        #swipe-area {height: 220px; 
+    position: relative; 
+    /* 修改：去掉深色背景，改为透明，或者保留一点点底色 */
+    background: transparent; 
+    /* 或者保留淡黑：background: linear-gradient(to top, rgba(0,0,0,0.3), transparent); */
+    
+    display: flex; justify-content: center; align-items: center; flex-shrink: 0; z-index: 50; }
         
         /* 修改：卡片宽度减半 */
         #swipe-card { 
@@ -208,6 +214,7 @@
 
     <div id="overlay"><h1 id="result-title"></h1><p id="result-desc"></p><button id="restart-btn" onclick="initGame()">重新模拟</button></div>
 </div>
-<script src="https://cdn.jsdelivr.net/gh/LuoshuiCat/demo@main/game.js"></script>
+<script src="game.js"></script>
+    <!--<script src="https://cdn.jsdelivr.net/gh/LuoshuiCat/demo@main/game.js"></script> -->
 </body>
 </html>

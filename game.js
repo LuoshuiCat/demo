@@ -21,6 +21,7 @@ let lastTextState = 'none';  // 'left' | 'right' | 'none'
 let lastHighlightDir = null; // 缓存当前高亮方向
 let rafId = null;
 const RECRUIT_COOLDOWN = 60; // 招募时间间隔
+let snowInterval = null; // 新增：用于保存雪花生成器的ID
 
 // 建筑定义 (已更新)
 const buildingDefinitions = {
@@ -607,7 +608,8 @@ let currentPhase = "POLICY", currentCardIndex = 0, currentDeck = [], cardMap = {
 const ui = {
     eventTitle: document.getElementById('event-title'), eventDesc: document.getElementById('event-desc'), 
     txtLeft: document.getElementById('txt-left'), txtRight: document.getElementById('txt-right'),
-    swipeCard: document.getElementById('swipe-card'), buildingsContainer: document.getElementById('buildings-container'), overlay: document.getElementById('overlay'), resultTitle: document.getElementById('result-title'), resultDesc: document.getElementById('result-desc'),
+    swipeCard: document.getElementById('swipe-card'),   swipeArea: document.getElementById('swipe-area'), // 【新增】缓存滑动区域容器
+buildingsContainer: document.getElementById('buildings-container'), overlay: document.getElementById('overlay'), resultTitle: document.getElementById('result-title'), resultDesc: document.getElementById('result-desc'),
     idlePanel: document.getElementById('idle-panel'), finalTimer: document.getElementById('final-timer'), incomeStats: document.getElementById('income-stats'), sideUI: document.getElementById('side-ui'),
     recruitBtn: document.getElementById('recruit-btn'), recruitStatus: document.getElementById('recruit-status'), progressRing: document.querySelector('#progress-ring circle'), disasterBtn: document.getElementById('disaster-btn'),
     barLeft: document.getElementById('bar-left'), barRight: document.getElementById('bar-right'),
@@ -621,27 +623,69 @@ function cacheUIElements() {
     });
 }
 
-function showMask() { ui.sceneMask.classList.add('active'); }
-function hideMask() { ui.sceneMask.classList.remove('active'); }
+function showMask()
+ { ui.sceneMask.classList.add('active'); 
+// 新增：给底部区域加上深色背景，使其变暗
+    ui.swipeArea.style.background = 'linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.5))'; 
+}
+function hideMask() { ui.sceneMask.classList.remove('active');
+// 新增：移除底部区域的背景，使其变透明，挂机时能看到后面的景色
+    ui.swipeArea.style.background = 'transparent';
+ }
 
 function initGame() {
-    resources = { treasury: 50, people: 50, military: 50, culture: 50 }; incomeRates = { treasury: 5, people: 5, military: 5, culture: 5 }; 
-    buildingLevels = { treasury: 0, people: 0, military: 0, culture: 0 }; 
-    occupiedPositions = { back: [], mid: [], front: [] }; spawnedBuildings = { treasury: [], people: [], military: [], culture: [] }; characters = []; gameTime = 0; recruitSlots = 0; recruitTimer = RECRUIT_COOLDOWN; specialEventTriggered = false; pendingDisaster = false; currentCardIndex = 0; currentDeck = [];
+    resources = { treasury: 50, people: 50, military: 50, culture: 50 }; 
+    incomeRates = { treasury: 5, people: 5, military: 5, culture: 5 }; 
+    buildingLevels = {}; 
+    occupiedPositions = { back: [], mid: [], front: [] }; 
+    spawnedBuildings = { treasury: [], people: [], military: [], culture: [] }; 
+    characters = []; 
+    gameTime = 0; 
+    recruitSlots = 0; 
+    recruitTimer = RECRUIT_COOLDOWN; 
+    specialEventTriggered = false; 
+    pendingDisaster = false; 
+    currentCardIndex = 0; 
+    currentDeck = [];
     
     cacheUIElements(); 
-    ui.buildingsContainer.innerHTML = ''; ui.overlay.style.display = 'none'; ui.idlePanel.style.display = 'none'; ui.sideUI.style.display = 'none'; ui.swipeCard.style.display = 'flex';
-    updateUI(); updateRecruitUI();
+    ui.buildingsContainer.innerHTML = ''; 
+    ui.overlay.style.display = 'none'; 
+    ui.idlePanel.style.display = 'none'; 
+    ui.sideUI.style.display = 'none'; 
+    ui.swipeCard.style.display = 'flex';
+    
+    updateUI(); 
+    updateRecruitUI(); 
     setupSwipeEvents();
     
-    if(gameLoopInterval) clearInterval(gameLoopInterval); lastTime = Date.now(); gameLoopInterval = setInterval(gameLoop, 100);
-     // 新增：游戏开始即刻启动背景渐变，持续120秒
+    if(gameLoopInterval) clearInterval(gameLoopInterval); 
+    lastTime = Date.now(); 
+    gameLoopInterval = setInterval(gameLoop, 100);
+
+    // --- 修改重点：强制重置背景状态 ---
     const bgMask = document.getElementById('bg-mask');
-    if(bgMask) bgMask.style.opacity = 0;
+    if(bgMask) {
+        // 1. 先关闭过渡动画，让重置瞬间完成
+        bgMask.style.transition = 'none'; 
+        // 2. 强制设为不透明 (春季背景)
+        bgMask.style.opacity = 1;
+        // 3. 强制回流，确保浏览器应用了上面的样式
+        void bgMask.offsetHeight; 
+        // 4. 恢复过渡动画 (120秒)
+        bgMask.style.transition = 'opacity 120s ease'; 
+        // 5. 延迟一帧后再开始变透明 (开始入冬)
+        // 使用 requestAnimationFrame 确保这一帧渲染的是春季
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                bgMask.style.opacity = 0;
+            });
+        });
+    }
+    // ----------------------------------
 
-    startSnow(); // 开启下雪
+    startSnow(); 
     startIntro();
-
 }
 
 function startIntro() {
@@ -670,7 +714,49 @@ function startPolicyPhase() {
 }
 
 function loadDeck(d) { currentDeck = d; cardMap = {}; currentDeck.forEach(c => cardMap[c.id] = c); nextCardId = currentDeck.length ? currentDeck[0].id : null; }
-function gameLoop() { let n = Date.now(), dt = (n - lastTime) / 1000; lastTime = n; if (recruitSlots < 3) { recruitTimer -= dt; if (recruitTimer <= 0) { recruitSlots++; recruitTimer = RECRUIT_COOLDOWN; updateRecruitUI(); } } updateRecruitRing(); if (currentPhase === "IDLE") { gameTime += dt; incomeTimer += dt; if (incomeTimer >= 15) { incomeTimer = 0; applyIncome(); } let r = finalCountdown - gameTime; if (r <= 180 && !specialEventTriggered) triggerSpecialEvent(); if (r <= 0) startCrisis(); else ui.finalTimer.innerText = `安史之乱倒计时: ${Math.floor(r/60)}:${String(Math.floor(r%60)).padStart(2,'0')}`; updateCharacterPositions(dt); } }
+function gameLoop() { 
+    let n = Date.now(), dt = (n - lastTime) / 1000; 
+    lastTime = n; 
+    
+    // 招募冷却逻辑
+    if (recruitSlots < 3) { 
+        recruitTimer -= dt; 
+        if (recruitTimer <= 0) { 
+            recruitSlots++; 
+            recruitTimer = RECRUIT_COOLDOWN; 
+            updateRecruitUI(); 
+        } 
+    } 
+    updateRecruitRing(); 
+    
+    // 核心游戏循环
+    if (currentPhase === "IDLE") { 
+        gameTime += dt; 
+        incomeTimer += dt; 
+        if (incomeTimer >= 15) { 
+            incomeTimer = 0; 
+            applyIncome(); 
+        } 
+        
+        let r = finalCountdown - gameTime;
+        
+        // --- 新增：冬去春来逻辑 ---
+        // 当倒计时剩余 180秒 (3分钟) 时，停止下雪，背景还原
+        if (r <= 180 && snowInterval) { 
+            returnToSpring(); 
+        }
+        // -----------------------
+
+        // 触发灾害
+        if (r <= 180 && !specialEventTriggered) triggerSpecialEvent(); 
+        
+        // 触发危机
+        if (r <= 0) startCrisis(); 
+        else ui.finalTimer.innerText = `安史之乱倒计时: ${Math.floor(r/60)}:${String(Math.floor(r%60)).padStart(2,'0')}`; 
+        
+        updateCharacterPositions(dt); 
+    } 
+}
 function applyIncome() { for (let k in resources) { resources[k] += incomeRates[k]; highlightRes(k, true); checkBuildingUpgrades(k); } updateUI(); let h = checkHighStatFail(); if (h) { showResult(false, h); clearInterval(gameLoopInterval); } }
 function highlightRes(k, isIncrease) { let valEl = ui.resValues[k]; if(!valEl) return; if (isIncrease) { valEl.classList.remove('guess'); valEl.classList.add('highlight'); setTimeout(() => valEl.classList.remove('highlight'), 300); } else { valEl.classList.add('guess'); } }
 function clearGuessHighlight() { Object.values(ui.resValues).forEach(el => el.classList.remove('guess')); }
@@ -681,6 +767,21 @@ function updateRecruitRing() { ui.progressRing.style.strokeDashoffset = recruitS
 function checkBuildingUpgrades(t) { let v = resources[t]; let l = buildingLevels[t] || 0; for (let i = l; i < BUILD_THRESHOLDS.length; i++) { if (v >= BUILD_THRESHOLDS[i]) { spawnBuilding(t); buildingLevels[t] = i + 1; } } }
 function spawnBuilding(t) { const d = buildingDefinitions[t]; if(!d) return; let a = d.filter(x => !spawnedBuildings[t].includes(x.name)); if(!a.length) { spawnedBuildings[t] = []; a = d; } const b = a[Math.floor(Math.random() * a.length)]; spawnedBuildings[t].push(b.name); const div = document.createElement('div'); div.className = 'building'; let iconHtml = b.icon.startsWith('http') ? `<div class="building-icon"><img src="${b.icon}"></div>` : `<div class="building-icon">${b.icon}</div>`; div.innerHTML = `${iconHtml}<span>${b.name}</span>`; const rows = [{ n:'back', b:55, s:0.75, z:1 }, { n:'mid', b:35, s:0.95, z:2 }, { n:'front', b:15, s:1.15, z:3 }]; const row = rows[Math.floor(Math.random() * rows.length)]; let p = -1; for(let i=0; i<20; i++) { let tp = Math.random()*80+10; if(!occupiedPositions[row.n].some(e => Math.abs(e-tp)<30)) { p = tp; break; } } if(p===-1) p = Math.random()*80+10; occupiedPositions[row.n].push(p); div.style.cssText = `left:${p}%;bottom:${row.b}%;transform:scale(${row.s});z-index:${row.z}`; ui.buildingsContainer.appendChild(div); }
 function triggerSpecialEvent() { specialEventTriggered = true; pendingDisaster = true; ui.disasterBtn.classList.add('show'); }
+// 新增：冬去春来，停止下雪，背景还原
+function returnToSpring() {
+    // 1. 停止生成新雪花
+    if (snowInterval) {
+        clearInterval(snowInterval);
+        snowInterval = null;
+    }
+    
+    // 2. 背景切回原景 (透明度设为 1)
+    const bgMask = document.getElementById('bg-mask');
+    if (bgMask) {
+        bgMask.style.opacity = 1;
+    }
+}
+
 function handleDisaster() { 
     if(!pendingDisaster) return; 
     pendingDisaster = false; 
@@ -714,6 +815,8 @@ function showNextCard() {
     if (!c) { console.error("Card missing", nextCardId); if(currentPhase==="POLICY") startEvolution(); else finishCharacterCreation(); return; }
 
     showMask();
+// 【新增】确保滑动区域是显示状态
+    ui.swipeArea.style.display = 'flex'; 
     ui.eventTitle.innerText = c.title;
     
     // --- 修改：识别通用的随机结果后缀 ---
@@ -867,7 +970,7 @@ function startEvolution() {
     ui.eventTitle.style.opacity = 0; 
     ui.eventDesc.style.opacity = 0; 
     ui.swipeCard.style.display = 'none'; 
-
+  ui.swipeArea.style.display = 'none'; // 【新增】隐藏底部滑动区域
     ui.idlePanel.style.display = 'block'; 
     ui.sideUI.style.display = 'flex'; 
     for(let k in resources) checkBuildingUpgrades(k); 
@@ -967,11 +1070,12 @@ function createSnowflake() {
 
 // 开启下雪
 function startSnow() {
-   
+   	
     // 循环生成
-    setInterval(() => {
+    // 修改：将 setInterval 的返回值赋给全局变量
+    snowInterval = setInterval(() => {
         createSnowflake();
-    }, 800); // 每800毫秒生成一片
+    }, 800); 
 }
 
 initGame();
