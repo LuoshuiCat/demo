@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>天策：大唐模拟器</title>
+    <style>
+        body { margin: 0; padding:0; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; background-color: #1a1a1a; color: white; overflow: hidden; user-select: none; display: flex; justify-content: center; height: 100vh; }
+        
+        /* 游戏主容器 */
+        #game-container { width: 100%; max-width: 450px; height: 100%; position: relative; display: flex; flex-direction: column; touch-action: none; background-image: url('https://cdn.jsdelivr.net/gh/LuoshuiCat/demo@main/assets/scene.jpg'); background-size: cover; background-position: center; 
+              /* 修改：这里的背景图设为最终的雪景图 */
+    background-image: url('https://cdn.jsdelivr.net/gh/LuoshuiCat/demo@main/assets/scene3.jpg'); 
+    background-size: cover;
+    background-position: center;
+        }
+
+
+        
+        /* 1. 顶部数值栏 */
+        #ui-top { height: 60px; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: space-around; align-items: center; z-index: 100; flex-shrink: 0; position: relative; }
+        .res-item { display: flex; flex-direction: column; align-items: center; font-size: 12px; }
+        .res-icon { width: 24px; height: 24px; display: flex; justify-content: center; align-items: center; margin-bottom: 2px; }
+        .res-icon img { width: 100%; height: 100%; object-fit: contain; }
+        .res-value { font-weight: bold; color: #ffd700; transition: transform 0.2s; }
+        .res-value.highlight { color: #00FF00; transform: scale(1.2); }
+        .res-value.warning { color: #FF0000; animation: blink 1s infinite; }
+        .res-value.guess { color: #FFA500; transform: scale(1.2); transition: color 0.2s; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+
+        /* 2. 场景层 */
+        #world-layer { 
+    flex: 1; position: relative; overflow: hidden; 
+    z-index: 5; /* 新增：明确层级，大于 bg-mask 的 2 */
+}
+        #scene-mask { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); z-index: 10; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; will-change: opacity; }
+        #scene-mask.active { opacity: 1; }
+
+        /* 2. 新增：原背景遮罩层 */
+        
+/* 2. 确保 bg-mask 位于最底层 */
+#bg-mask {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background-image: url('https://cdn.jsdelivr.net/gh/LuoshuiCat/demo@main/assets/scene.jpg');
+    background-size: cover;
+    background-position: center;
+    z-index: 2; /* 位于最底层 */
+    opacity: 1; 
+    transition: opacity 120s ease; /* 120秒平滑过渡 */
+    pointer-events: none;
+}
+
+/* 确保 scene-mask (黑色遮罩) 在 bg-mask 之上 */
+#scene-mask { z-index: 10; }
+        
+        /* 修改：标题和描述下移 */
+        #event-display { 
+            width: 90%; position: absolute; 
+            top: 80px; /* 从 15px 改为 80px，向下移动 */
+            left: 50%; transform: translateX(-50%); text-align: center; z-index: 20; pointer-events: none; transition: opacity 0.3s; 
+        }
+        #event-title { font-size: 22px; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); margin-bottom: 8px; }
+        #event-desc { font-size: 15px; color: #eee; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); line-height: 1.5; }
+        
+        #idle-panel { position: absolute; top: 50px; left: 10px; right: 10px; background: rgba(0,0,0,0.7); border-radius: 8px; padding: 10px; display: none; z-index: 60; }
+        #final-timer { text-align: center; font-size: 18px; color: #ffcc00; font-weight: bold; }
+        #income-stats { display: flex; justify-content: space-around; font-size: 12px; color: #aaa; margin-top: 5px; }
+        
+        /* 建筑与人物 */
+        #buildings-container { position: absolute; bottom: 0; left: 0; right: 0; height: 100%; pointer-events: none; z-index: 1; }
+        .building { position: absolute; min-width: 60px; height: 70px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; animation: buildUp 0.5s ease-out backwards; font-size: 12px; margin: 0 2px; will-change: transform, opacity; color: rgba(30, 30, 30, 0.9); text-shadow: 0 0 2px rgba(255,255,255,0.6); }
+        .building-icon { width: 45px; height: 45px; display: flex; justify-content: center; align-items: center; margin-bottom: 2px; }
+        .building-icon img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5)); }
+        @keyframes buildUp { from { transform: translateY(20px) scale(0.8); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+        .character-entity { position: absolute; width: 40px; height: 40px; background: rgba(255,255,255,0.9); border-radius: 50%; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); z-index: 6; border: 1px solid #333; overflow: hidden; }
+        .character-elite { box-shadow: 0 0 15px #ffd700; border: 2px solid #fff; animation: pop 0.5s; }
+        @keyframes pop { 0% { transform: scale(0); } 50% { transform: scale(1.5); } 100% { transform: scale(1); } }
+        .character-entity img { width: 100%; height: 100%; object-fit: cover; }
+
+       /* 雪花样式 */
+.snowflake {
+    position: absolute;
+    /* 关键修复：z-index 设为 15，位于遮罩(10)之上，但在文本(20)和卡片(50)之下 */
+    z-index: 15; 
+    top: -20px; /* 从屏幕最上方开始 */
+    color: #fff;
+    pointer-events: none; /* 不阻挡点击 */
+    user-select: none;
+    text-shadow: 0 0 5px #fff;
+    opacity: 0.8; /* 稍微透明一点 */
+    animation: snow-fall linear forwards; /* forwards 表示动画结束后停留在最后一帧（然后被JS移除） */
+}
+
+/* 动画定义 */
+@keyframes snow-fall {
+    0% {
+        transform: translateY(0) translateX(0) rotate(0deg);
+        opacity: 0.8;
+    }
+    100% {
+        /* translateY(105vh) 意味着下落整个屏幕高度+5% */
+        /* translateX 随机设置，让雪花左右飘 */
+        transform: translateY(105vh) translateX(30px) rotate(360deg); 
+        opacity: 0.2;
+    }
+}
+
+        /* 3. 文字层 (独立层级，屏幕中央偏下) */
+        /* 修改：下移一点，确保不遮挡上方标题 */
+        #text-layer {
+            position: absolute;
+            top: 55%;         /* 从 50% 改为 55%，稍微下移 */
+            left: 0; width: 100%;
+            transform: translateY(-50%); 
+            z-index: 200;      
+            pointer-events: none; 
+            display: flex; justify-content: center; align-items: center;
+        }
+        .center-text {
+            position: absolute;
+            width: 80%;
+            text-align: center;
+            font-size: 22px; font-weight: bold; 
+            color: #fff;
+            opacity: 0; 
+            transition: opacity 0.2s ease-in-out;
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.9); 
+            line-height: 1.4;
+        }
+        .center-text.active { opacity: 1; }
+        .center-text.left-text.active { color: #ff9999; }
+        .center-text.right-text.active { color: #99ff99; }
+
+        /* 4. 滑动区域 (底部) */
+        #swipe-area { height: 220px; position: relative; background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.5)); display: flex; justify-content: center; align-items: center; flex-shrink: 0; z-index: 50; }
+        
+        /* 修改：卡片宽度减半 */
+        #swipe-card { 
+            width: 160px; height: 120px; /* 宽度 320 -> 160 */
+            background: linear-gradient(135deg, #f6f6f6 0%, #e0e0e0 100%); 
+            border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); position: absolute; display: flex; justify-content: center; align-items: center; color: #333; transition: transform 0.1s, opacity 0.3s; will-change: transform, opacity; overflow: hidden;
+        }
+        
+        /* 竖条按钮 (占满卡片) */
+        .swipe-bar {
+            position: absolute;
+            top: 0; height: 100%;
+            width: 0%; 
+            transition: width 0.1s linear;
+        }
+        .bar-left { left: 0; background: linear-gradient(to right, rgba(217, 83, 79, 1), rgba(217, 83, 79, 0.6)); }
+        .bar-right { right: 0; background: linear-gradient(to left, rgba(92, 184, 92, 1), rgba(92, 184, 92, 0.6)); }
+
+        /* 右侧UI */
+        #side-ui { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 150; display: none; }
+        .action-btn { width: 70px; height: 70px; background: rgba(0,0,0,0.7); border: none; border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; border: 2px solid transparent; transition: all 0.3s; }
+        #recruit-btn.active { box-shadow: 0 0 15px #ffd700; border-color: #ffd700; }
+        #disaster-btn { display: none; background: rgba(150, 0, 0, 0.8); animation: pulse 1.5s infinite; }
+        #disaster-btn.show { display: flex; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.4); } 70% { box-shadow: 0 0 0 15px rgba(255, 0, 0, 0); } }
+        #progress-ring { position: absolute; top: 0; left: 0; width: 70px; height: 70px; transform: rotate(-90deg); pointer-events: none; }
+        #progress-ring circle { fill: transparent; stroke-width: 3px; stroke: #ffd700; stroke-dasharray: 188.5; stroke-dashoffset: 188.5; transition: stroke-dashoffset 0.1s; }
+
+        /* 结算层 */
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 300; text-align: center; }
+        #overlay h1 { color: #ffd700; } #overlay p { margin-bottom: 30px; white-space: pre-line; line-height: 1.6; }
+        #restart-btn { background: #337ab7; color: white; padding: 15px 40px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; border: none; }
+    </style>
+</head>
+<body>
+<div id="game-container">
+
+    <div id="bg-mask"></div>    <!-- 新增：原背景遮罩层，用于淡出效果 -->
+
+    <div id="ui-top">
+        <div class="res-item" id="res-item-treasury"><div class="res-icon"><img src="https://cdn.jsdelivr.net/gh/LuoshuiCat/demo@main/assets/food.png"></div><div class="res-value" id="res-treasury">50</div><div>粮食</div></div>
+        <div class="res-item" id="res-item-people"><div class="res-icon"><img src="https://cdn.jsdelivr.net/gh/LuoshuiCat/demo@main/assets/tech.png"></div><div class="res-value" id="res-people">50</div><div>科技</div></div>
+        <div class="res-item" id="res-item-military"><div class="res-icon"><img src="https://cdn.jsdelivr.net/gh/LuoshuiCat/demo@main/assets/army.png"></div><div class="res-value" id="res-military">50</div><div>军事</div></div>
+        <div class="res-item" id="res-item-culture"><div class="res-icon"><img src="https://cdn.jsdelivr.net/gh/LuoshuiCat/demo@main/assets/culture1.png"></div><div class="res-value" id="res-culture">50</div><div>文化</div></div>
+    </div>
+    
+    <div id="world-layer">
+        <div id="scene-mask"></div>
+        <div id="event-display"><div id="event-title">加载中</div><div id="event-desc">请稍候...</div></div>
+        <div id="idle-panel"><div id="final-timer">安史之乱倒计时: 05:00</div><div id="income-stats"></div></div>
+        <div id="buildings-container"></div>
+    </div>
+    
+    <!-- 文字层：独立于场景和滑动区 -->
+    <div id="text-layer">
+        <div class="center-text left-text" id="txt-left">选项A</div>
+        <div class="center-text right-text" id="txt-right">选项B</div>
+    </div>
+
+    <div id="side-ui">
+        <div style="position:relative"><svg id="progress-ring"><circle cx="35" cy="35" r="30" /></svg><div id="recruit-btn" class="action-btn" onclick="tryStartRecruit()"><div style="font-size:24px">➕</div><div style="font-size:12px;font-weight:bold" id="recruit-status">招募(0)</div></div></div>
+        <div id="disaster-btn" class="action-btn" onclick="handleDisaster()"><div style="font-size:28px">⚠️</div><div style="font-size:12px;font-weight:bold">灾害</div></div>
+    </div>
+    
+    <div id="swipe-area">
+        <div id="swipe-card">
+            <div class="swipe-bar bar-left" id="bar-left"></div>
+            <div class="swipe-bar bar-right" id="bar-right"></div>
+            <div style="position:absolute;bottom:5px;color:#888;font-size:10px;z-index:20">◄ 滑动 ►</div>
+        </div>
+    </div>
+
+    <div id="overlay"><h1 id="result-title"></h1><p id="result-desc"></p><button id="restart-btn" onclick="initGame()">重新模拟</button></div>
+</div>
+<script src="https://cdn.jsdelivr.net/gh/LuoshuiCat/demo@main/game.js"></script>
+</body>
+</html>
